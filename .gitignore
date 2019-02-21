@@ -18,6 +18,12 @@
 *.github.io
 _*.diff
 
+bindings/python/dist/
+bindings/python/src/
+bindings/python/Pipfile
+bindings/python/README
+bindings/python/PKG-INFO
+bindings/python/PKG-INFO.src
 build*/
 samples/sample
 _sample*.txt

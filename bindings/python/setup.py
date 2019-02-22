@@ -10,10 +10,11 @@ import shutil
 import stat
 import sys
 from distutils import dir_util, file_util
+from distutils import errors
 from distutils import log
 from distutils.command.build_clib import build_clib
 from distutils.command.build_py import build_py
-from distutils.command.install_lib import install_lib
+from distutils.command.install import install
 from distutils.command.sdist import sdist
 from distutils.core import setup
 
@@ -168,8 +169,19 @@ class custom_build_py(build_py):
        self.data_files = self.get_data_files()
        build_py.run(self)
 
-def dummy_src():
-    return []
+
+class custom_install(install):
+    def finalize_options(self):
+        log.info('running custom_install')
+        try:
+            bdist_wheel = self.get_finalized_command('bdist_wheel')
+        except errors.DistutilsModuleError:
+            pass
+        else:
+            if self.install_lib is None and bdist_wheel.data_dir is not None:
+                # ensure the wheel is specified as a platlib and not purelib
+                self.install_lib = os.path.join(bdist_wheel.data_dir, 'platlib')
+        install.finalize_options(self)        
 
 
 setup(
@@ -191,12 +203,13 @@ setup(
     cmdclass=dict(
         build_clib=custom_build_clib,
         build_py=custom_build_py,
+        install=custom_install,
         sdist=custom_sdist,
     ),
     libraries=[(
         'keystone', dict(
             package='keystone',
-            sources=dummy_src()
+            sources=[]
         ),
     )],
 )

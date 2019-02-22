@@ -146,9 +146,13 @@ class custom_build_clib(build_clib):
                 else:  # Unix
                     os.chmod("../make-share.sh", stat.S_IREAD | stat.S_IEXEC)
                     os.system("../make-share.sh lib_only")
-                    directory = "src/build/llvm/" + ("lib64" if is_64bits else "lib")
-                    filename = "libkeystone.dylib" if SYSTEM == "darwin" else "libkeystone.so"
-                    data_files.append(directory + "/" + filename)
+                    directory = "src/build/llvm/"
+                    if SYSTEM == "darwin":
+                        directory += "lib/libkeystone.dylib"
+                    elif is_64bits and os.path.isdir(directory + "lib64"):
+                        directory += "lib64/libkeystone.so"
+                    else:
+                        diretory += "lib/libkeystone.so"
 
                 # back to root dir
                 os.chdir(cur_dir)

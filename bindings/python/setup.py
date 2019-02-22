@@ -12,6 +12,7 @@ import sys
 from distutils import dir_util, file_util
 from distutils import log
 from distutils.command.build_clib import build_clib
+from distutils.command.build_py import build_py
 from distutils.command.install_lib import install_lib
 from distutils.command.sdist import sdist
 from distutils.core import setup
@@ -25,10 +26,8 @@ PKG_NAME = 'keystone-engine'
 if os.path.exists(PATH_LIB64) and os.path.exists(PATH_LIB32):
     PKG_NAME = 'keystone-engine-windows'
 
-VERSION = '0.9.1-3'
+VERSION = '0.9.1.post3'
 SYSTEM = sys.platform
-
-SETUP_DATA_FILES = []
 
 # adapted from commit e504b81 of Nguyen Tan Cong
 # Reference: https://docs.python.org/2/library/platform.html#cross-platform
@@ -49,6 +48,7 @@ def copy_sources():
 
     dir_util.copy_tree("../../llvm", "src/llvm/")
     dir_util.copy_tree("../../include", "src/include/")
+    dir_util.copy_tree("../../suite", "src/suite")
 
     src.extend(glob.glob("../../*.h"))
     src.extend(glob.glob("../../*.cpp"))
@@ -72,7 +72,7 @@ def copy_sources():
 
     for filename in src:
         outpath = os.path.join("./src/", os.path.basename(filename))
-        log.info("%s -> %s" % (filename, outpath))
+        log.info("copying %s -> %s" % (filename, outpath))
         shutil.copy(filename, outpath)
 
 
@@ -108,16 +108,16 @@ class custom_build_clib(build_clib):
         build_clib.finalize_options(self)
 
     def build_libraries(self, libraries):
-
+        data_files = []
         cur_dir = os.path.realpath(os.curdir)
 
         if SYSTEM in ("win32", "cygwin"):
             # if Windows prebuilt library is available, then include it
             if is_64bits and os.path.exists(PATH_LIB64):
-                SETUP_DATA_FILES.append(PATH_LIB64)
+                data_files.append(PATH_LIB64)
                 return
             elif os.path.exists(PATH_LIB32):
-                SETUP_DATA_FILES.append(PATH_LIB32)
+                data_files.append(PATH_LIB32)
                 return
 
         # build library from source if src/ is existent
@@ -141,31 +141,32 @@ class custom_build_clib(build_clib):
                         os.system("KEYSTONE_BUILD_CORE_ONLY=yes ./make.sh cygwin-mingw64")
                     else:
                         os.system("KEYSTONE_BUILD_CORE_ONLY=yes ./make.sh cygwin-mingw32")
-                    SETUP_DATA_FILES.append("src/build/keystone.dll")
+                    data_files.append("src/build/keystone.dll")
                 else:  # Unix
                     os.chmod("../make-share.sh", stat.S_IREAD | stat.S_IEXEC)
                     os.system("../make-share.sh lib_only")
-                    if SYSTEM == "darwin":
-                        SETUP_DATA_FILES.append("src/build/llvm/lib/libkeystone.dylib")
-                    else:  # Non-OSX
-                        SETUP_DATA_FILES.append("src/build/llvm/lib/libkeystone.so")
+                    directory = "src/build/llvm/" + ("lib64" if is_64bits else "lib")
+                    filename = "libkeystone.dylib" if SYSTEM == "darwin" else "libkeystone.so"
+                    data_files.append(directory + "/" + filename)
 
                 # back to root dir
                 os.chdir(cur_dir)
 
         except Exception as e:
             log.error(e)
+        else:
+            for lib_file in data_files:
+                file_util.copy_file(lib_file, 'keystone')
         finally:
             os.chdir(cur_dir)
 
 
-class custom_install(install_lib):
-    def install(self):
-        install_lib.install(self)
-        ks_install_dir = os.path.join(self.install_dir, 'keystone')
-        for lib_file in SETUP_DATA_FILES:
-            file_util.copy_file(lib_file, ks_install_dir)
-
+class custom_build_py(build_py):
+    def run(self):
+       log.info('running custom_build_py')
+       self.run_command('build_clib')
+       self.data_files = self.get_data_files()
+       build_py.run(self)
 
 def dummy_src():
     return []
@@ -174,6 +175,7 @@ def dummy_src():
 setup(
     provides=['keystone'],
     packages=['keystone'],
+    package_data={'keystone': ['keystone.dll', 'libkeystone.*']},
     name=PKG_NAME,
     version=VERSION,
     author='Nguyen Anh Quynh',
@@ -188,10 +190,9 @@ setup(
     requires=['ctypes'],
     cmdclass=dict(
         build_clib=custom_build_clib,
+        build_py=custom_build_py,
         sdist=custom_sdist,
-        install_lib=custom_install,
     ),
-
     libraries=[(
         'keystone', dict(
             package='keystone',
